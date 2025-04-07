@@ -1,101 +1,98 @@
 import numpy as np
-import pandas as pd
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import PolynomialFeatures
 import matplotlib.pyplot as plt
-
-class LinearRegression:
-    def __init__(self, method='ols', max_iter=1000, alpha=0.01, tol=1e-6):
-        self.method = method
-        self.max_iter = max_iter
-        self.alpha = alpha  # 学习率
-        self.tol = tol      # 收敛阈值
-        self.weights = None
-
-    def fit(self, X, y):
-        X = np.c_[np.ones(len(X)), X]  # 添加偏置项
-        if self.method == 'ols':
-            # 最小二乘法闭式解
-            self.weights = np.linalg.inv(X.T @ X) @ X.T @ y
-        elif self.method == 'gd':
-            # 梯度下降实现
-            self.weights = np.zeros(X.shape[1])
-            for _ in range(self.max_iter):
-                grad = X.T @ (X @ self.weights - y) / len(X)
-                self.weights -= self.alpha * grad
-                if np.linalg.norm(grad) < self.tol:
-                    break
-        elif self.method == 'newton':
-            # 牛顿法实现
-            self.weights = np.zeros(X.shape[1])
-            for _ in range(self.max_iter):
-                error = X @ self.weights - y
-                grad = X.T @ error / len(X)
-                hessian = X.T @ X / len(X)
-                delta = np.linalg.inv(hessian) @ grad
-                self.weights -= delta
-                if np.linalg.norm(delta) < self.tol:
-                    break
-        return self
-
-    def predict(self, X):
-        X = np.c_[np.ones(len(X)), X]
-        return X @ self.weights
+import os
 
 # 数据加载
-train_data = pd.read_csv('e:/TESTpy/PRML/homework1/data/train.txt', sep='\t')
-test_data = pd.read_csv('e:/TESTpy/PRML/homework1/data/test.txt', sep='\t')
+train_data = np.loadtxt(r'E:\TESTpy\PRML\homework1\data\train.txt',
+                        skiprows=1,  # 跳过标题行
+                        delimiter='\t')  # 指定制表符分隔
+test_data = np.loadtxt(r'E:\TESTpy\PRML\homework1\data\test.txt',
+                       skiprows=1,
+                       delimiter='\t')
+X_train, y_train = train_data[:, 0], train_data[:, 1]
+X_test, y_test = test_data[:, 0], test_data[:, 1]
 
-X_train, y_train = train_data['x_new'].values.reshape(-1,1), train_data['y_new_complex']
-X_test, y_test = test_data['x_new'].values.reshape(-1,1), test_data['y_new_complex']
+# 添加偏置项
+X_train_b = np.c_[np.ones((len(X_train), 1)), X_train]
+X_test_b = np.c_[np.ones((len(X_test), 1)), X_test]
 
-# 模型训练与评估
-methods = ['ols', 'gd', 'newton']
-results = {}
+# 最小二乘法
+def least_squares(X, y):
+    return np.linalg.inv(X.T @ X) @ X.T @ y
 
-for method in methods:
-    model = LinearRegression(method=method)
-    model.fit(X_train, y_train)
-    
-    train_pred = model.predict(X_train)
-    test_pred = model.predict(X_test)
-    
-    results[method] = {
-        'train_mse': mean_squared_error(y_train, train_pred),
-        'test_mse': mean_squared_error(y_test, test_pred),
-        'coef': model.weights
-    }
+# 梯度下降法
+def gradient_descent(X, y, lr=0.01, n_iter=1000):
+    w = np.random.randn(X.shape[1])
+    losses = []
+    for _ in range(n_iter):
+        y_pred = X @ w
+        gradient = (2 / X.shape[0]) * X.T @ (y_pred - y)
+        w -= lr * gradient
+        losses.append(np.mean((y_pred - y) ** 2))
+    return w, losses
 
-# 结果输出
-print("线性模型结果对比:")
-for method, res in results.items():
-    print(f"\n{method.upper()}方法:")
-    print(f"训练MSE: {res['train_mse']:.4f}, 测试MSE: {res['test_mse']:.4f}")
-    print(f"模型参数: w0={res['coef'][0]:.4f}, w1={res['coef'][1]:.4f}")
+# 牛顿法
+def newton_method(X, y, n_iter=10):
+    w = np.random.randn(X.shape[1])
+    H = 2 / X.shape[0] * X.T @ X  # Hessian矩阵
+    for _ in range(n_iter):
+        grad = 2 / X.shape[0] * X.T @ (X @ w - y)
+        w -= np.linalg.inv(H) @ grad
+    return w
 
-# 新增可视化代码
-plt.figure(figsize=(12, 6))
+# 模型训练和评估
+methods = {
+    "Least Squares": least_squares,
+    "Gradient Descent": gradient_descent,
+    "Newton Method": newton_method
+}
 
-# 绘制训练数据散点
-plt.scatter(X_train, y_train, color='gray', alpha=0.5, label='Training Data')
+# 在绘图前创建结果目录
+results_dir = r'E:\TESTpy\PRML\homework1\results'
+os.makedirs(results_dir, exist_ok=True)
 
-# 生成预测用的连续数据
-x_plot = np.linspace(X_train.min(), X_train.max(), 100).reshape(-1, 1)
+# 初始化对比图
+plt.figure(figsize=(10, 6))
+plt.scatter(X_train, y_train, s=10, label='Train Data', zorder=3)
 
-# 绘制各方法拟合线
-colors = ['blue', 'green', 'red']
-for (method, res), color in zip(results.items(), colors):
-    y_plot = res['coef'][0] + res['coef'][1] * x_plot
-    plt.plot(x_plot, y_plot, color=color, 
-             linewidth=2, 
-             label=f'{method.upper()} Fit')
+for name, method in methods.items():
+    # 训练模型
+    if name == "Gradient Descent":
+        w, losses = method(X_train_b, y_train)
+        # 保存GD的损失曲线
+        plt.figure()
+        plt.plot(losses)
+        plt.title('Gradient Descent Loss Curve')
+        plt.xlabel('Iterations')
+        plt.ylabel('MSE')
+        plt.savefig(os.path.join(results_dir, 'gd_loss_curve.png'))
+        plt.close()
+    else:
+        w = method(X_train_b, y_train)
 
-plt.xlabel('x_new')
-plt.ylabel('y_new_complex')
+    # 预测和评估
+    train_pred = X_train_b @ w
+    test_pred = X_test_b @ w
+    train_mse = np.mean((train_pred - y_train) ** 2)
+    test_mse = np.mean((test_pred - y_test) ** 2)
+
+    # 为每个方法单独保存拟合图
+    plt.figure(figsize=(8, 5))
+    plt.scatter(X_train, y_train, s=10, label='Train Data')
+    plt.plot(X_train, train_pred, 'r-', linewidth=2, label=f'{name} Fit')
+    plt.title(f'{name}\nTrain MSE: {train_mse:.2f}, Test MSE: {test_mse:.2f}')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, f'linear_fit_{name.replace(" ", "_")}.png'))
+    plt.close()
+
+    # 添加到对比图
+    plt.plot(X_train, train_pred, linestyle='--',
+             label=f'{name} (Test MSE: {test_mse:.2f})')
+
+# 保存对比图
 plt.title('Linear Regression Methods Comparison')
 plt.legend()
 plt.grid(True)
-
-# 保存图片
-plt.savefig('e:/TESTpy/PRML/homework1/results/linear_fit_comparison.png')
+plt.savefig(os.path.join(results_dir, 'linear_fits_comparison.png'))
 plt.close()
+    
